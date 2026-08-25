@@ -1,0 +1,9 @@
+{
+  "short_name": "Shopify Classifier",
+  "name": "Shopify Taxonomy Super Classifier",
+  "icons": [],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#000000",
+  "background_color": "#ffffff"
+}
