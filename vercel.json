@@ -1,0 +1,12 @@
+{
+  "buildCommand": "cd frontend && npm install && npm run build",
+  "outputDirectory": "frontend/build",
+  "framework": "create-react-app",
+  "installCommand": "cd frontend && npm install",
+  "rewrites": [
+    {
+      "source": "/((?!static|favicon.ico|manifest.json|logo192.png|logo512.png|robots.txt).*)",
+      "destination": "/index.html"
+    }
+  ]
+}
