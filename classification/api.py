@@ -85,19 +85,21 @@ class ProductViewSet(viewsets.ModelViewSet):
         
         file = request.FILES['file']
         
-        # Process file based on extension
         if file.name.endswith('.xlsx') or file.name.endswith('.xls'):
-            products = self._import_excel(file)
+            products, skipped, errors = self._import_excel(file)
         elif file.name.endswith('.csv'):
-            products = self._import_csv(file)
+            products, skipped, errors = self._import_csv(file)
         else:
             return Response(
-                {'error': 'Unsupported file format'},
+                {'error': 'Unsupported file format. Please use CSV or XLSX.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
         return Response({
-            'message': f'Imported {len(products)} products',
+            'message': f'Imported {len(products)} products, {skipped} skipped',
+            'imported': len(products),
+            'skipped': skipped,
+            'errors': errors,
             'products': ProductSerializer(products, many=True).data
         })
     
@@ -108,58 +110,113 @@ class ProductViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'])
     def export_products(self, request):
         """Export classified products."""
-        # Placeholder - would generate Excel file in production
         return Response({'message': 'Export functionality'})
     
     def _import_excel(self, file):
-        """Import products from Excel file."""
+        """Import products from Excel file with duplicate handling."""
         import openpyxl
         
         wb = openpyxl.load_workbook(file)
         ws = wb.active
         
         products = []
+        skipped = 0
+        errors = []
         headers = [cell.value for cell in ws[1]]
         
-        for row in ws.iter_rows(min_row=2, values_only=True):
-            data = dict(zip(headers, row))
-            
-            product = Product.objects.create(
-                product_number=data.get('Product Number', ''),
-                product_name=data.get('Product Name', ''),
-                product_description=data.get('Description', ''),
-                image_url=data.get('Image URL', ''),
-                source_category=data.get('Category', ''),
-                materials=data.get('Materials', ''),
-                product_weight=data.get('Weight'),
-                country_of_origin=data.get('Country of Origin', '')
-            )
-            products.append(product)
+        for row_num, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+            try:
+                data = dict(zip(headers, row))
+                
+                product_number = data.get('Product Number', '')
+                if not product_number:
+                    errors.append(f'Row {row_num}: Missing Product Number')
+                    skipped += 1
+                    continue
+                
+                try:
+                    product = Product.objects.get(product_number=product_number)
+                    product.product_name = data.get('Product Name', product.product_name)
+                    product.product_description = data.get('Description', product.product_description)
+                    product.image_url = data.get('Image URL', product.image_url)
+                    product.source_category = data.get('Category', product.source_category)
+                    product.materials = data.get('Materials', product.materials)
+                    product.product_weight = data.get('Weight', product.product_weight)
+                    product.country_of_origin = data.get('Country of Origin', product.country_of_origin)
+                    product.brand = data.get('Brand', product.brand)
+                    product.product_type = data.get('Product Type', product.product_type)
+                    product.save()
+                except Product.DoesNotExist:
+                    product = Product.objects.create(
+                        product_number=product_number,
+                        product_name=data.get('Product Name', ''),
+                        product_description=data.get('Description', ''),
+                        image_url=data.get('Image URL', ''),
+                        source_category=data.get('Category', ''),
+                        materials=data.get('Materials', ''),
+                        product_weight=data.get('Weight'),
+                        country_of_origin=data.get('Country of Origin', ''),
+                        brand=data.get('Brand', ''),
+                        product_type=data.get('Product Type', '')
+                    )
+                
+                products.append(product)
+            except Exception as e:
+                errors.append(f'Row {row_num}: {str(e)}')
+                skipped += 1
         
-        return products
+        return products, skipped, errors
     
     def _import_csv(self, file):
-        """Import products from CSV file."""
+        """Import products from CSV file with duplicate handling."""
         import csv
         
         products = []
+        skipped = 0
+        errors = []
         decoded_file = file.read().decode('utf-8')
         reader = csv.DictReader(decoded_file.splitlines())
         
-        for row in reader:
-            product = Product.objects.create(
-                product_number=row.get('Product Number', ''),
-                product_name=row.get('Product Name', ''),
-                product_description=row.get('Description', ''),
-                image_url=row.get('Image URL', ''),
-                source_category=row.get('Category', ''),
-                materials=row.get('Materials', ''),
-                product_weight=row.get('Weight'),
-                country_of_origin=row.get('Country of Origin', '')
-            )
-            products.append(product)
+        for row_num, row in enumerate(reader, start=2):
+            try:
+                product_number = row.get('Product Number', '')
+                if not product_number:
+                    errors.append(f'Row {row_num}: Missing Product Number')
+                    skipped += 1
+                    continue
+                
+                try:
+                    product = Product.objects.get(product_number=product_number)
+                    product.product_name = row.get('Product Name', product.product_name)
+                    product.product_description = row.get('Description', product.product_description)
+                    product.image_url = row.get('Image URL', product.image_url)
+                    product.source_category = row.get('Category', product.source_category)
+                    product.materials = row.get('Materials', product.materials)
+                    product.product_weight = row.get('Weight', product.product_weight)
+                    product.country_of_origin = row.get('Country of Origin', product.country_of_origin)
+                    product.brand = row.get('Brand', product.brand)
+                    product.product_type = row.get('Product Type', product.product_type)
+                    product.save()
+                except Product.DoesNotExist:
+                    product = Product.objects.create(
+                        product_number=product_number,
+                        product_name=row.get('Product Name', ''),
+                        product_description=row.get('Description', ''),
+                        image_url=row.get('Image URL', ''),
+                        source_category=row.get('Category', ''),
+                        materials=row.get('Materials', ''),
+                        product_weight=row.get('Weight'),
+                        country_of_origin=row.get('Country of Origin', ''),
+                        brand=row.get('Brand', ''),
+                        product_type=row.get('Product Type', '')
+                    )
+                
+                products.append(product)
+            except Exception as e:
+                errors.append(f'Row {row_num}: {str(e)}')
+                skipped += 1
         
-        return products
+        return products, skipped, errors
 
 
 class ClassificationViewSet(viewsets.ModelViewSet):
@@ -193,13 +250,11 @@ class ClassificationViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND
             )
         
-        # Get taxonomy categories
         categories = list(TaxonomyCategory.objects.values(
             'id', 'shopify_id', 'name', 'full_path',
             'keywords', 'product_type_hint', 'top_level_category'
         ))
         
-        # Initialize classification service
         ClassificationService = _get_classification_service()
         service = ClassificationService(config={
             'taxonomy': categories,
@@ -208,7 +263,6 @@ class ClassificationViewSet(viewsets.ModelViewSet):
         })
         service.initialize(categories)
         
-        # Classify product
         product_data = {
             'id': product.id,
             'product_name': product.product_name,
@@ -217,7 +271,8 @@ class ClassificationViewSet(viewsets.ModelViewSet):
             'source_category': product.source_category,
             'materials': product.materials,
             'product_weight': product.product_weight,
-            'product_type': product.product_type
+            'product_type': product.product_type,
+            'brand': product.brand
         }
         
         result = service.classify_product(product_data, use_llm=use_llm)
@@ -237,23 +292,53 @@ class ClassificationViewSet(viewsets.ModelViewSet):
     
     @extend_schema(
         summary="Batch classify products",
-        description="Classify multiple products in batch"
+        description="Classify multiple products in batch with resume support"
     )
     @action(detail=False, methods=['post'])
     def batch_classify(self, request):
-        """Classify multiple products in batch."""
+        """Classify multiple products in batch with resume capability."""
         product_ids = request.data.get('product_ids', [])
+        batch_id = request.data.get('batch_id')
         use_llm = request.data.get('use_llm', False)
+        resume = request.data.get('resume', False)
+        
+        batch = None
+        if batch_id:
+            try:
+                batch = ClassificationBatch.objects.get(id=batch_id)
+                if batch.status == 'completed':
+                    return Response(
+                        {'error': 'Batch already completed'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                batch.start()
+            except ClassificationBatch.DoesNotExist:
+                return Response(
+                    {'error': 'Batch not found'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+        else:
+            batch = ClassificationBatch.objects.create(
+                name=f'Batch {timezone.now().strftime("%Y%m%d %H%M%S")}',
+                total_products=len(product_ids),
+                use_llm=use_llm
+            )
+            batch.start()
+        
+        if resume and batch.processed_products > 0:
+            already_processed = Classification.objects.filter(
+                product_id__in=product_ids,
+                status__in=['approved', 'auto_classified']
+            ).values_list('product_id', flat=True)
+            product_ids = [pid for pid in product_ids if pid not in already_processed]
         
         products = Product.objects.filter(id__in=product_ids)
         
-        # Get taxonomy categories
         categories = list(TaxonomyCategory.objects.values(
             'id', 'shopify_id', 'name', 'full_path',
             'keywords', 'product_type_hint', 'top_level_category'
         ))
         
-        # Initialize classification service
         ClassificationService = _get_classification_service()
         service = ClassificationService(config={
             'taxonomy': categories,
@@ -262,30 +347,90 @@ class ClassificationViewSet(viewsets.ModelViewSet):
         })
         service.initialize(categories)
         
-        # Classify products
         results = []
+        successful = 0
+        failed = 0
+        needs_review = 0
+        
         for product in products:
-            product_data = {
-                'id': product.id,
-                'product_name': product.product_name,
-                'product_description': product.product_description,
-                'image_url': product.image_url,
-                'source_category': product.source_category,
-                'materials': product.materials,
-                'product_weight': product.product_weight,
-                'product_type': product.product_type
-            }
+            try:
+                product_data = {
+                    'id': product.id,
+                    'product_name': product.product_name,
+                    'product_description': product.product_description,
+                    'image_url': product.image_url,
+                    'source_category': product.source_category,
+                    'materials': product.materials,
+                    'product_weight': product.product_weight,
+                    'product_type': product.product_type,
+                    'brand': product.brand
+                }
+                
+                result = service.classify_product(product_data, use_llm=use_llm)
+                
+                classification, _ = Classification.objects.update_or_create(
+                    product=product,
+                    defaults={
+                        'predicted_category_path': result.category_path,
+                        'confidence': result.confidence,
+                        'status': 'auto_classified' if not result.requires_review else 'needs_review',
+                        'requires_manual_review': result.requires_review,
+                        'review_reason': result.review_reason or '',
+                        'classification_method': result.classification_method,
+                    }
+                )
+                
+                for alt in result.alternatives:
+                    AlternativeCategory.objects.create(
+                        classification=classification,
+                        category_path=alt.get('category', ''),
+                        confidence=alt.get('confidence', 0),
+                        rank=alt.get('rank', 1)
+                    )
+                
+                for attr_name, attr_value in result.extracted_attributes.items():
+                    ClassificationAttribute.objects.create(
+                        classification=classification,
+                        attribute_name=attr_name,
+                        attribute_value=attr_value
+                    )
+                
+                if result.requires_review:
+                    needs_review += 1
+                successful += 1
+                
+                results.append({
+                    'product_id': result.product_id,
+                    'category_path': result.category_path,
+                    'confidence': result.confidence,
+                    'requires_review': result.requires_review,
+                    'status': 'success'
+                })
+            except Exception as e:
+                failed += 1
+                results.append({
+                    'product_id': product.id,
+                    'status': 'failed',
+                    'error': str(e)
+                })
             
-            result = service.classify_product(product_data, use_llm=use_llm)
-            results.append({
-                'product_id': result.product_id,
-                'category_path': result.category_path,
-                'confidence': result.confidence,
-                'requires_review': result.requires_review
-            })
+            batch.processed_products += 1
+            batch.successful_classifications = successful
+            batch.failed_classifications = failed
+            batch.reviews_needed = needs_review
+            batch.save(update_fields=[
+                'processed_products', 'successful_classifications',
+                'failed_classifications', 'reviews_needed'
+            ])
+        
+        batch.complete()
         
         return Response({
+            'batch_id': batch.id,
             'total': len(results),
+            'successful': successful,
+            'failed': failed,
+            'needs_review': needs_review,
             'results': results
         })
     
@@ -335,7 +480,6 @@ class ClassificationViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        # Find category
         try:
             new_category = TaxonomyCategory.objects.get(full_path=new_category_path)
         except TaxonomyCategory.DoesNotExist:
@@ -344,7 +488,6 @@ class ClassificationViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND
             )
         
-        # Update classification
         classification.taxonomy_node = new_category
         classification.predicted_category_path = new_category_path
         classification.status = 'approved'

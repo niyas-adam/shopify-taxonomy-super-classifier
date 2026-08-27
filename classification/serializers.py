@@ -9,8 +9,6 @@ from .models import (
 
 
 class TaxonomyCategorySerializer(serializers.ModelSerializer):
-    """Serializer for taxonomy categories."""
-    
     children = serializers.SerializerMethodField()
     
     class Meta:
@@ -27,8 +25,6 @@ class TaxonomyCategorySerializer(serializers.ModelSerializer):
 
 
 class ProductSerializer(serializers.ModelSerializer):
-    """Serializer for products."""
-    
     classification = serializers.SerializerMethodField()
     
     class Meta:
@@ -37,7 +33,7 @@ class ProductSerializer(serializers.ModelSerializer):
             'id', 'product_number', 'product_name', 'product_description',
             'image_url', 'image', 'source_category', 'source_subcategory',
             'materials', 'product_weight', 'country_of_origin', 'product_type',
-            'status', 'classification_status', 'classification',
+            'brand', 'status', 'classification_status', 'classification',
             'created_at', 'updated_at'
         ]
     
@@ -50,24 +46,18 @@ class ProductSerializer(serializers.ModelSerializer):
 
 
 class ClassificationAttributeSerializer(serializers.ModelSerializer):
-    """Serializer for classification attributes."""
-    
     class Meta:
         model = ClassificationAttribute
         fields = ['id', 'attribute_name', 'attribute_value', 'confidence']
 
 
 class AlternativeCategorySerializer(serializers.ModelSerializer):
-    """Serializer for alternative categories."""
-    
     class Meta:
         model = AlternativeCategory
         fields = ['id', 'category_path', 'confidence', 'rank']
 
 
 class ClassificationSerializer(serializers.ModelSerializer):
-    """Serializer for classifications."""
-    
     product_name = serializers.CharField(source='product.product_name', read_only=True)
     product_number = serializers.CharField(source='product.product_number', read_only=True)
     
@@ -85,8 +75,6 @@ class ClassificationSerializer(serializers.ModelSerializer):
 
 
 class ClassificationDetailSerializer(serializers.ModelSerializer):
-    """Detailed serializer for classifications."""
-    
     product = ProductSerializer(read_only=True)
     attributes = ClassificationAttributeSerializer(many=True, read_only=True)
     alternative_categories = AlternativeCategorySerializer(many=True, read_only=True)
@@ -105,8 +93,6 @@ class ClassificationDetailSerializer(serializers.ModelSerializer):
 
 
 class ClassificationBatchSerializer(serializers.ModelSerializer):
-    """Serializer for classification batches."""
-    
     progress_percentage = serializers.FloatField(read_only=True)
     
     class Meta:
@@ -122,8 +108,6 @@ class ClassificationBatchSerializer(serializers.ModelSerializer):
 
 
 class ClassificationStatsSerializer(serializers.Serializer):
-    """Serializer for classification statistics."""
-    
     total_products = serializers.IntegerField()
     classified = serializers.IntegerField()
     needs_review = serializers.IntegerField()
