@@ -2,10 +2,11 @@
 REST API for the classification system.
 """
 from rest_framework import viewsets, status, permissions
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import extend_schema, OpenApiParameter
+from django.db.models import Avg
 
 from .models import (
     TaxonomyCategory, Product, Classification,
@@ -434,14 +435,13 @@ class StatsViewSet(viewsets.ViewSet):
         
         avg_confidence = 0.0
         if classified > 0:
-            from django.db.models import Avg
             avg_confidence = Classification.objects.aggregate(
                 avg_confidence=Avg('confidence')
             )['avg_confidence'] or 0.0
         
         status_counts = {}
-        for status, _ in Classification.STATUS_CHOICES:
-            status_counts[status] = Classification.objects.filter(status=status).count()
+        for status_val, _ in Classification.STATUS_CHOICES:
+            status_counts[status_val] = Classification.objects.filter(status=status_val).count()
         
         return Response({
             'total_products': total_products,
@@ -451,3 +451,34 @@ class StatsViewSet(viewsets.ViewSet):
             'average_confidence': round(avg_confidence, 3),
             'status_counts': status_counts
         })
+
+
+@api_view(['GET'])
+@permission_classes([permissions.AllowAny])
+def stats_view(request):
+    """Direct stats endpoint - returns classification statistics."""
+    from django.db.models import Avg as AvgFunc
+
+    total_products = Product.objects.count()
+    classified = Classification.objects.exclude(status='pending').count()
+    needs_review = Classification.objects.filter(requires_manual_review=True).count()
+    approved = Classification.objects.filter(status='approved').count()
+
+    avg_confidence = 0.0
+    if classified > 0:
+        avg_confidence = Classification.objects.aggregate(
+            avg_conf=AvgFunc('confidence')
+        )['avg_conf'] or 0.0
+
+    status_counts = {}
+    for s, _ in Classification.STATUS_CHOICES:
+        status_counts[s] = Classification.objects.filter(status=s).count()
+
+    return Response({
+        'total_products': total_products,
+        'classified': classified,
+        'needs_review': needs_review,
+        'approved': approved,
+        'average_confidence': round(avg_confidence, 3),
+        'status_counts': status_counts
+    })
