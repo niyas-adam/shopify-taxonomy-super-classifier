@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 REST API for the classification system.
 """
@@ -18,6 +19,8 @@ from .serializers import (
     ClassificationAttributeSerializer, AlternativeCategorySerializer,
     ClassificationBatchSerializer, ClassificationStatsSerializer
 )
+
+
 # Lazy import - avoid loading ML libs at startup
 def _get_classification_service():
     from .services import ClassificationService
@@ -84,7 +87,6 @@ class ProductViewSet(viewsets.ModelViewSet):
         
         file = request.FILES['file']
         
-        # Process file based on extension
         if file.name.endswith('.xlsx') or file.name.endswith('.xls'):
             products = self._import_excel(file)
         elif file.name.endswith('.csv'):
@@ -107,7 +109,6 @@ class ProductViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'])
     def export_products(self, request):
         """Export classified products."""
-        # Placeholder - would generate Excel file in production
         return Response({'message': 'Export functionality'})
     
     def _import_excel(self, file):
@@ -192,13 +193,11 @@ class ClassificationViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND
             )
         
-        # Get taxonomy categories
         categories = list(TaxonomyCategory.objects.values(
             'id', 'shopify_id', 'name', 'full_path',
             'keywords', 'product_type_hint', 'top_level_category'
         ))
         
-        # Initialize classification service
         ClassificationService = _get_classification_service()
         service = ClassificationService(config={
             'taxonomy': categories,
@@ -207,7 +206,6 @@ class ClassificationViewSet(viewsets.ModelViewSet):
         })
         service.initialize(categories)
         
-        # Classify product
         product_data = {
             'id': product.id,
             'product_name': product.product_name,
@@ -246,13 +244,11 @@ class ClassificationViewSet(viewsets.ModelViewSet):
         
         products = Product.objects.filter(id__in=product_ids)
         
-        # Get taxonomy categories
         categories = list(TaxonomyCategory.objects.values(
             'id', 'shopify_id', 'name', 'full_path',
             'keywords', 'product_type_hint', 'top_level_category'
         ))
         
-        # Initialize classification service
         ClassificationService = _get_classification_service()
         service = ClassificationService(config={
             'taxonomy': categories,
@@ -261,7 +257,6 @@ class ClassificationViewSet(viewsets.ModelViewSet):
         })
         service.initialize(categories)
         
-        # Classify products
         results = []
         for product in products:
             product_data = {
@@ -325,6 +320,7 @@ class ClassificationViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'])
     def reassign(self, request, pk=None):
         """Reassign product to different category."""
+        from django.utils import timezone
         classification = self.get_object()
         new_category_path = request.data.get('category_path')
         
@@ -334,7 +330,6 @@ class ClassificationViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        # Find category
         try:
             new_category = TaxonomyCategory.objects.get(full_path=new_category_path)
         except TaxonomyCategory.DoesNotExist:
@@ -343,7 +338,6 @@ class ClassificationViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND
             )
         
-        # Update classification
         classification.taxonomy_node = new_category
         classification.predicted_category_path = new_category_path
         classification.status = 'approved'
@@ -360,6 +354,7 @@ class ClassificationViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'])
     def batch_approve(self, request):
         """Approve multiple classifications."""
+        from django.utils import timezone
         classification_ids = request.data.get('classification_ids', [])
         reviewed_by = request.data.get('reviewed_by', 'system')
         
@@ -440,8 +435,8 @@ class StatsViewSet(viewsets.ViewSet):
             )['avg_confidence'] or 0.0
         
         status_counts = {}
-        for status_val, _ in Classification.STATUS_CHOICES:
-            status_counts[status_val] = Classification.objects.filter(status=status_val).count()
+        for s, _ in Classification.STATUS_CHOICES:
+            status_counts[s] = Classification.objects.filter(status=s).count()
         
         return Response({
             'total_products': total_products,
@@ -481,4 +476,54 @@ def stats_view(request):
         'approved': approved,
         'average_confidence': round(avg_confidence, 3),
         'status_counts': status_counts
+    })
+
+
+@api_view(['POST'])
+@permission_classes([permissions.AllowAny])
+def seed_taxonomy_view(request):
+    """Seed taxonomy database with Shopify categories."""
+    from .management.commands.seed_taxonomy_data import TAXONOMY_DATA
+
+    clear = request.data.get('clear', False)
+    if clear:
+        TaxonomyCategory.objects.all().delete()
+
+    id_to_obj = {}
+    created = 0
+    skipped = 0
+
+    for entry in TAXONOMY_DATA:
+        shopify_id, name, full_path, parent_id, level, keywords, hint, top_cat = entry
+
+        if TaxonomyCategory.objects.filter(shopify_id=shopify_id).exists():
+            skipped += 1
+            continue
+
+        cat = TaxonomyCategory.objects.create(
+            shopify_id=shopify_id,
+            name=name,
+            full_path=full_path,
+            level=level,
+            keywords=keywords,
+            product_type_hint=hint,
+            top_level_category=top_cat,
+        )
+        id_to_obj[shopify_id] = cat
+        created += 1
+
+    for entry in TAXONOMY_DATA:
+        shopify_id, name, full_path, parent_id, level, keywords, hint, top_cat = entry
+        if parent_id and parent_id in id_to_obj:
+            cat = id_to_obj.get(shopify_id)
+            if cat:
+                cat.parent = id_to_obj[parent_id]
+                cat.save(update_fields=['parent'])
+
+    total = TaxonomyCategory.objects.count()
+    return Response({
+        'message': f'Seeded taxonomy: {created} created, {skipped} skipped, {total} total',
+        'created': created,
+        'skipped': skipped,
+        'total': total
     })
