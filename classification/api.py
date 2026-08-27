@@ -1,4 +1,4 @@
- """
+"""
 REST API for the classification system.
 """
 from rest_framework import viewsets, status, permissions
